@@ -1,6 +1,47 @@
-var http = require('http'); //httpモジュール呼び出し
-http.createServer(function (request, response) {
-    // リクエストを受けると以下のレスポンスを送信する
-    response.writeHead(200, {'Content-Type': 'text/plain'}); //レスポンスヘッダーに書き込み
-    response.end('Hello World\n'); // レスポンスボディに書き込み＆レスポンス送信を完了する
-}).listen(process.env.PORT || 8080); //公開ポートで待ち受け
+const lighthouse = require('lighthouse');
+const chromeLauncher = require('chrome-launcher');
+
+const perfConfig = require('lighthouse/lighthouse-core/config/perf.json');
+
+function launchChromeAndRunLighthouse(url, opts, config = null) {
+  return chromeLauncher
+    .launch({ chromeFlags: opts.chromeFlags })
+    .then(chrome => {
+      opts.port = chrome.port;
+      return lighthouse(url, opts, config).then(results => {
+        // The gathered artifacts are typically removed as they can be quite large (~50MB+)
+        delete results.artifacts;
+        return chrome.kill().then(() => {
+          const scoreMap = Object.entries(results.audits).reduce(
+            (acc, [key, a]) => {
+              if (typeof a.score === 'number') {
+                return Object.assign({}, acc, { [key]: a.score });
+              }
+              return acc;
+            },
+            {}
+          );
+
+          const scoreCategories = Object.entries(
+            results.reportCategories
+          ).reduce((acc, [key, a]) => {
+            return Object.assign({}, acc, { [a.name]: a.score });
+            return acc;
+          }, {});
+
+          return Object.assign(scoreCategories, scoreMap);
+        });
+      });
+    });
+}
+
+const opts = {
+  port: 0,
+  autoSelectChrome: true, // False to manually select which Chrome install.
+  chromeFlags: ['--headless', '--disable-gpu', '--no-sandbox']
+};
+
+// Usage:
+module.exports = url => {
+  return launchChromeAndRunLighthouse('https://' + url, opts);
+};
